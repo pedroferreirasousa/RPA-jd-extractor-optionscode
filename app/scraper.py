@@ -3,7 +3,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.service import Service
 import time
 
-def capturar_token_jd():
+def capturar_token():
     # Configura o Chrome automaticamente
     options = webdriver.ChromeOptions()
     driver = webdriver.Chrome(
