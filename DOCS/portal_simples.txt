@@ -1,0 +1,440 @@
+================================================================================
+   JD EXTRACTOR — PORTAL WEB: VISÃO REALISTA (REVISADA)
+   Data: 27/04/2026
+   Nota: Este documento substitui a análise anterior (muito complexa).
+         Foco no mínimo necessário com base no que já está construído.
+================================================================================
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. O QUE JÁ ESTÁ PRONTO (= TRABALHO ZERO NO PORTAL)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  processor.py   → Lê o Excel, chama a API JD por chassi, consolida os dados
+                   REAPROVEITADO SEM ALTERAÇÃO (ou quase nenhuma)
+
+  db_inserter.py → Insere os dados no MySQL
+                   REAPROVEITADO SEM ALTERAÇÃO NENHUMA
+
+  scraper.py     → Abre o Chrome, faz login, captura o Bearer Token
+                   VIRA O "token_helper.exe" — distribuído para o usuário
+
+  .env           → Credenciais do banco — vai para o servidor, sem mudança
+
+  O ÚNICO arquivo que vai para o lixo é o main.py (a janela CustomTkinter).
+  O portal web é o substituto do main.py — só isso.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2. O QUE PRECISA SER CRIADO (O MÍNIMO)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  SÓ 3 ARQUIVOS NOVOS:
+
+  [1] web_app.py       → Backend Flask/FastAPI (substitui o main.py GUI)
+                         ~150 linhas de Python
+
+  [2] index.html       → Página única (Single Page) com os mesmos 3 botões
+                         ~200 linhas de HTML + JS
+
+  [3] token_helper.py  → Script local para capturar o token (= scraper.py
+                         com print do token na tela, +10 linhas)
+
+  OPCIONAL (mas recomendado):
+  [4] docker-compose.yml → Para hospedar o web_app.py em qualquer servidor
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+3. O QUE O USUÁRIO FAZ NO PORTAL (= OS MESMOS 3 PASSOS DO EXE)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  EXE ATUAL                          PORTAL WEB
+  ─────────────────────────────────────────────────────────────────────────
+  [1] Clicar "Fazer Login (Okta)"  → Roda token_helper.exe na máquina,
+      → abre o Chrome, faz login      copia o token, cola no campo da página
+      → token capturado automático
+
+  [2] Clicar "Selecionar Planilha" → Campo de upload de arquivo na página
+      → abre janela do Windows         (arrastar o .xlsx ou clicar)
+
+  [3] Clicar "Iniciar Extração"    → Botão "Extrair" na página
+      → escolhe onde salvar           → progresso aparece em tempo real na tela
+      → aguarda popup de resultado    → botão de download aparece ao terminar
+
+  O RESULTADO FINAL É IDÊNTICO:
+    - Excel com todos os dados extraídos → download pelo browser
+    - Registros inseridos no MySQL       → igual ao exe
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+4. STACK SIMPLIFICADA (SEM EXAGERO)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  NÃO PRECISA DE:
+    ✘ Celery (fila de tarefas)
+    ✘ Redis
+    ✘ Docker Compose com múltiplos containers
+    ✘ React / Vue / Angular
+    ✘ Banco de dados extra para sessões
+
+  O QUE USAR (simples e suficiente):
+    ✔ Flask   — framework web Python mais simples que existe
+    ✔ HTML + Bootstrap 5 — página bonita sem esforço
+    ✔ JavaScript puro (fetch + EventSource) — sem bibliotecas extras
+    ✔ Threading do Python — para não travar o servidor enquanto processa
+    ✔ Server-Sent Events (SSE) — progresso em tempo real, nativo no browser
+
+  NOVAS DEPENDÊNCIAS A INSTALAR:
+    pip install flask
+
+  É só isso. Flask já vem com tudo que precisa para um site simples.
+  O resto (pandas, requests, mysql-connector, python-dotenv) já está
+  no requirements.txt do projeto.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+5. ESTRUTURA DE PASTAS DO PORTAL
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  jd-extractor/
+  ├── app/
+  │   ├── processor.py        ← IGUAL AO ATUAL (mínima adaptação)
+  │   ├── db_inserter.py      ← IGUAL AO ATUAL (sem tocar)
+  │   ├── scraper.py          ← IGUAL AO ATUAL (vira token_helper)
+  │   ├── web_app.py          ← NOVO: substitui o main.py (Flask)
+  │   ├── token_helper.py     ← NOVO: ~10 linhas a mais no scraper.py
+  │   ├── requirements.txt    ← adicionar "flask"
+  │   └── templates/
+  │       └── index.html      ← NOVO: página do portal
+  │
+  ├── uploads/                ← pasta temporária (criada automaticamente)
+  ├── resultados/             ← pasta temporária (criada automaticamente)
+  ├── .env                    ← IGUAL AO ATUAL
+  └── Dockerfile              ← OPCIONAL (para hospedar em servidor)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+6. COMO O PORTAL VAI FUNCIONAR POR DENTRO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ENDPOINTS (rotas do Flask):
+
+  GET  /
+    → Serve a página index.html
+
+  POST /validar-token
+    → Recebe: { "token": "Bearer eyJ..." }
+    → Faz uma requisição de teste na API JD com esse token
+    → Retorna: { "ok": true } ou { "ok": false, "erro": "..." }
+
+  POST /upload
+    → Recebe o arquivo .xlsx
+    → Valida que tem coluna "chassi"
+    → Salva em /uploads/{uuid}.xlsx
+    → Retorna: { "job_id": "uuid", "total": 25 }
+
+  GET  /extrair/<job_id>?token=Bearer+eyJ...
+    → Server-Sent Events (SSE) — stream de progresso
+    → Roda processar_chassis() em thread separada
+    → A cada chassi processado, envia um evento para o browser:
+        data: {"chassi":"1CQS...", "linhas":47, "atual":5, "total":25}
+    → Ao final, envia:
+        data: {"status":"concluido", "linhas_db":1247, "arquivo":"uuid.xlsx"}
+
+  GET  /download/<job_id>
+    → Retorna o arquivo /resultados/{job_id}.xlsx para download
+
+  FLUXO COMPLETO NO BROWSER:
+    1. Usuário cola o token → JS faz POST /validar-token
+    2. Se ok → usuário faz upload do .xlsx → JS faz POST /upload
+    3. JS abre EventSource para GET /extrair/<job_id>
+    4. Browser recebe eventos e atualiza barra de progresso em tempo real
+    5. Ao receber status "concluido" → JS exibe botão de download
+    6. Usuário clica download → GET /download/<job_id>
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+7. SOBRE O LOGIN OKTA (A ÚNICA LIMITAÇÃO REAL)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  O login com Okta exige que o usuário aprove no celular (MFA).
+  Isso não pode ser feito num servidor remoto sem tela.
+
+  SOLUÇÃO — token_helper.exe (já é quase o scraper.py atual):
+
+    O usuário roda o token_helper.exe na própria máquina ANTES de abrir o portal.
+    O .exe abre o Chrome, o usuário faz login normalmente, o programa exibe:
+
+      ╔══════════════════════════════════════════════════════════════╗
+      ║  TOKEN CAPTURADO! Copie tudo abaixo e cole no portal:       ║
+      ║                                                              ║
+      ║  Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiO... ║
+      ╚══════════════════════════════════════════════════════════════╝
+
+    O usuário copia, abre o portal no browser, cola no campo e clica Validar.
+    O token dura várias horas — não precisa repetir isso em toda extração.
+
+  PARA COMPILAR O TOKEN_HELPER.EXE:
+    pyinstaller --onefile token_helper.py
+    → Gera token_helper.exe em /dist/
+    → Distribuir para os usuários que vão usar o portal
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+8. ESTIMATIVA REALISTA DE DESENVOLVIMENTO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ┌──────────────────────────────────────────┬─────────────────────────────┐
+  │ Tarefa                                   │ Tempo real                  │
+  ├──────────────────────────────────────────┼─────────────────────────────┤
+  │ web_app.py (Flask + rotas + SSE)         │ 4-6 horas                   │
+  │ Adaptar processor.py (callback progresso)│ 1-2 horas                   │
+  │ index.html (Bootstrap + JS progresso)    │ 4-6 horas                   │
+  │ token_helper.py + compilar .exe          │ 1 hora                      │
+  │ Testes end-to-end + ajustes              │ 2-3 horas                   │
+  ├──────────────────────────────────────────┼─────────────────────────────┤
+  │ TOTAL                                    │ 1 a 2 dias de trabalho      │
+  └──────────────────────────────────────────┴─────────────────────────────┘
+
+  Por que a estimativa anterior era exagerada?
+    → A análise anterior adicionou Celery, Redis, FastAPI, Docker Compose
+      com múltiplos containers, SSE avançada etc.
+    → Tudo desnecessário para substituir uma janela com 3 botões.
+    → Com Flask simples e threading do Python, o resultado é idêntico
+      e funciona sem nenhuma infraestrutura extra.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+9. PASSO A PASSO DE IMPLEMENTAÇÃO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ─────────────────────────────────────────────────────────────────────────────
+  PASSO 1 — Instalar Flask (5 minutos)
+  ─────────────────────────────────────────────────────────────────────────────
+
+    No terminal, dentro do projeto:
+      pip install flask
+
+    Adicionar "flask" no requirements.txt
+
+
+  ─────────────────────────────────────────────────────────────────────────────
+  PASSO 2 — Adaptar processor.py para aceitar callback de progresso
+  ─────────────────────────────────────────────────────────────────────────────
+
+    Atualmente, processar_chassis() salva o Excel num caminho fixo e não
+    reporta progresso chassi a chassi.
+
+    Mudanças mínimas necessárias:
+      a) Adicionar parâmetro "progress_fn=None" na função
+      b) Dentro do loop de chassis, chamar progress_fn(chassi, linhas, atual, total)
+      c) Retornar os bytes do Excel ao invés de salvar em caminho fixo
+         (OU aceitar o caminho de saída como parâmetro — mais simples ainda)
+
+    Exemplo da chamada de progresso:
+      if progress_fn:
+          progress_fn(chassi_limpo, len(df_temp), idx+1, total_chassis)
+
+
+  ─────────────────────────────────────────────────────────────────────────────
+  PASSO 3 — Criar web_app.py (o coração do portal)
+  ─────────────────────────────────────────────────────────────────────────────
+
+    Estrutura básica do arquivo:
+
+      from flask import Flask, request, jsonify, send_file, render_template, Response
+      import threading, uuid, os, json, queue
+      from processor import processar_chassis
+
+      app = Flask(__name__)
+
+      jobs = {}  # dicionário em memória: { job_id: { "status", "fila", "arquivo" } }
+
+      @app.route('/')
+      def index():
+          return render_template('index.html')
+
+      @app.route('/validar-token', methods=['POST'])
+      def validar_token():
+          # Faz GET na API JD com o token recebido
+          # Retorna {"ok": true/false}
+
+      @app.route('/upload', methods=['POST'])
+      def upload():
+          # Recebe o .xlsx, salva em /uploads/, valida coluna "chassi"
+          # Retorna {"job_id": "...", "total": N}
+
+      @app.route('/extrair/<job_id>')
+      def extrair(job_id):
+          token = request.args.get('token')
+          # Inicia processamento em thread
+          # Retorna SSE (Server-Sent Events) com progresso
+          def gerar_eventos():
+              fila = jobs[job_id]['fila']
+              while True:
+                  evento = fila.get()
+                  yield f"data: {json.dumps(evento)}\n\n"
+                  if evento.get('status') == 'concluido':
+                      break
+          return Response(gerar_eventos(), mimetype='text/event-stream')
+
+      @app.route('/download/<job_id>')
+      def download(job_id):
+          # Retorna o arquivo Excel gerado
+          return send_file(jobs[job_id]['arquivo'], as_attachment=True)
+
+      if __name__ == '__main__':
+          app.run(host='0.0.0.0', port=5000, debug=False)
+
+
+  ─────────────────────────────────────────────────────────────────────────────
+  PASSO 4 — Criar app/templates/index.html
+  ─────────────────────────────────────────────────────────────────────────────
+
+    Página única com 3 seções que aparecem/somem (display:none/block):
+
+    SEÇÃO 1 — Token:
+      <input id="token" type="text" placeholder="Bearer eyJ...">
+      <button onclick="validarToken()">Validar e Continuar</button>
+
+    SEÇÃO 2 — Upload:
+      <input id="arquivo" type="file" accept=".xlsx">
+      <button onclick="iniciarExtracao()">Extrair Dados</button>
+
+    SEÇÃO 3 — Progresso:
+      <div class="progress-bar" id="barra"></div>
+      <p id="status-texto">Processando...</p>
+      <textarea id="log" readonly></textarea>
+      <button id="btn-download" style="display:none" onclick="baixar()">
+        Baixar Excel
+      </button>
+
+    JAVASCRIPT (dentro do próprio HTML):
+      function validarToken() {
+          fetch('/validar-token', { method:'POST', body:JSON.stringify({token:...}) })
+              .then(r => r.json())
+              .then(d => { if(d.ok) mostrarSecao2() })
+      }
+
+      function iniciarExtracao() {
+          // 1. Faz upload do arquivo
+          // 2. Ao receber job_id, abre EventSource para /extrair/<job_id>
+          // 3. A cada evento, atualiza barra e log
+          // 4. Quando status=="concluido", exibe botão de download
+          const es = new EventSource('/extrair/' + jobId + '?token=' + token)
+          es.onmessage = function(e) {
+              const d = JSON.parse(e.data)
+              atualizarProgresso(d)
+              if(d.status === 'concluido') es.close()
+          }
+      }
+
+
+  ─────────────────────────────────────────────────────────────────────────────
+  PASSO 5 — Criar token_helper.py
+  ─────────────────────────────────────────────────────────────────────────────
+
+    É quase uma cópia do scraper.py atual, com uma única mudança:
+    em vez de retornar o token silenciosamente, exibe na tela:
+
+      token = capturar_token()
+      print("\n" + "="*60)
+      print("TOKEN CAPTURADO! Copie e cole no portal:")
+      print("="*60)
+      print(token)
+      print("="*60)
+      input("\nPressione Enter para fechar...")
+
+    Para compilar o .exe:
+      pyinstaller --onefile token_helper.py
+      → Distribuir token_helper.exe para os usuários
+
+
+  ─────────────────────────────────────────────────────────────────────────────
+  PASSO 6 — Testar localmente
+  ─────────────────────────────────────────────────────────────────────────────
+
+    No terminal:
+      cd app
+      python web_app.py
+
+    Abrir no browser: http://localhost:5000
+
+    Testar o fluxo completo:
+      a) Rodar token_helper.exe → copiar token → colar no portal → validar
+      b) Fazer upload de um .xlsx com 1 chassi
+      c) Aguardar a barra de progresso
+      d) Baixar o Excel gerado
+      e) Verificar no banco se os dados entraram
+
+
+  ─────────────────────────────────────────────────────────────────────────────
+  PASSO 7 — Hospedar no servidor (se quiser acesso pela rede)
+  ─────────────────────────────────────────────────────────────────────────────
+
+    OPÇÃO MAIS SIMPLES — Rodar diretamente na máquina do usuário:
+      python web_app.py
+      → Acessar pelo próprio computador: http://localhost:5000
+      → Ou pela rede interna: http://IP-DA-MAQUINA:5000
+
+    OPÇÃO SERVIDOR INTERNO — Máquina dedicada na rede Maqnelson:
+      1. Copiar os arquivos para o servidor
+      2. Criar o .env com as credenciais do banco
+      3. Instalar dependências: pip install -r requirements.txt
+      4. Rodar: python web_app.py (ou com nohup para ficar em background)
+      5. Acessar de qualquer computador da rede: http://IP-SERVIDOR:5000
+
+    OPÇÃO DOCKER (mais organizado para servidor):
+      Criar Dockerfile na raiz do projeto:
+
+        FROM python:3.11-slim
+        WORKDIR /app
+        COPY app/ .
+        RUN pip install -r requirements.txt
+        EXPOSE 5000
+        CMD ["python", "web_app.py"]
+
+      Rodar:
+        docker build -t jd-portal .
+        docker run -d -p 5000:5000 --env-file .env jd-portal
+
+      Acessar: http://IP-SERVIDOR:5000
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+10. COMPARATIVO FINAL: EXE vs. PORTAL WEB
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ┌─────────────────────────────┬──────────────────┬────────────────────────┐
+  │ Critério                    │ .EXE atual       │ Portal Web             │
+  ├─────────────────────────────┼──────────────────┼────────────────────────┤
+  │ Instalação na máquina       │ Sim (.exe)       │ Só o token_helper.exe  │
+  │ Atualizar o sistema         │ Reenviar .exe    │ Atualiza no servidor   │
+  │ Acessar de outro computador │ Não              │ Sim (pela rede/VPN)    │
+  │ Múltiplos usuários          │ 1 por vez        │ Vários simultâneos     │
+  │ Progresso visível           │ Bloqueia a tela  │ Barra em tempo real    │
+  │ Histórico de execuções      │ Não              │ Pode adicionar depois  │
+  │ Login Okta                  │ Automático       │ token_helper.exe       │
+  │ Complexidade de manter      │ Simples          │ Simples também         │
+  │ Custo extra de infra        │ Zero             │ Zero (servidor interno)│
+  │ Tempo para construir        │ Já pronto        │ 1-2 dias               │
+  └─────────────────────────────┴──────────────────┴────────────────────────┘
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+11. PRÓXIMO PASSO IMEDIATO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Basta confirmar: quer que o GitHub Copilot crie os arquivos web_app.py
+  e index.html agora, já funcionando?
+
+  Em caso positivo, serão criados:
+    → app/web_app.py       (backend Flask completo com SSE)
+    → app/templates/index.html  (portal com Bootstrap 5, barra de progresso)
+    → app/token_helper.py  (helper para capturar token)
+    → processor.py será ajustado para suportar callback de progresso
+
+  Resultado: rodar "python web_app.py", abrir localhost:5000 e usar
+  o portal no browser — funcionando igual ao .exe atual.
+
+================================================================================

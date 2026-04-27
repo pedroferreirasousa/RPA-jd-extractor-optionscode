@@ -78,18 +78,20 @@ class App(ctk.CTk):
         self.btn_processar.configure(state="disabled", text="Processando...")
 
         def _processar():
-            resultado, erro = processar_chassis(self.caminho_planilha, self.token, caminho_saida)
+            resultado, linhas_db, erro = processar_chassis(self.caminho_planilha, self.token, caminho_saida)
             # Volta para a thread da UI
-            self.after(0, lambda: self._finalizar(resultado, erro))
+            self.after(0, lambda: self._finalizar(resultado, linhas_db, erro))
 
         threading.Thread(target=_processar, daemon=True).start()
 
-    def _finalizar(self, resultado, erro):
+    def _finalizar(self, resultado, linhas_db, erro):
         if resultado:
-            messagebox.showinfo("Fim", f"Processo concluído!\nSalvo em: {resultado}")
+            msg = f"Processo concluído!\nSalvo em: {resultado}\nLinhas inseridas no banco: {linhas_db}"
+            if erro:
+                msg += f"\n\nAviso: {erro}"
+            messagebox.showinfo("Fim", msg)
         else:
             messagebox.showerror("Erro no Processamento", erro or "Erro desconhecido.")
-        self.btn_processar.configure(state="normal", text="3. Iniciar Extração")
         self.btn_processar.configure(state="normal", text="3. Iniciar Extração")
 
 if __name__ == "__main__":

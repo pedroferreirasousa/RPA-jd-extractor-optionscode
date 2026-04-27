@@ -1,0 +1,594 @@
+================================================================================
+   JD EXTRACTOR — PORTAL WEB: ANÁLISE REALISTA E PASSO A PASSO
+   Data: 27/04/2026
+   Autor: Análise técnica gerada por GitHub Copilot
+   Revisão: Simplificada — foco no que está PRONTO e no mínimo necessário
+================================================================================
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PARTE 1 — CONFIRMAÇÃO: ISSO É UM RPA?
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+SIM. O JD Extractor é um RPA (Robotic Process Automation) clássico.
+
+O que caracteriza um RPA:
+  ✔ Automatiza uma tarefa que um humano faria manualmente no computador
+  ✔ Interage com sistemas externos sem API própria (neste caso, simula
+    um login humano via Selenium/Okta para capturar o token de autenticação)
+  ✔ Processa dados estruturados em lote (lista de chassis via planilha)
+  ✔ Produz um resultado consolidado (Excel + inserção no banco)
+
+Como o RPA atual funciona (fluxo completo):
+
+  [1] scraper.py  → Abre o Chrome via Selenium
+                  → Navega para jdwarrantysystem.deere.com
+                  → Aguarda o usuário fazer login manual com Okta (MFA)
+                  → Intercepta o tráfego de rede com selenium-wire
+                  → Captura o Bearer Token do cabeçalho "Authorization"
+                  → Fecha o browser e retorna o token
+
+  [2] processor.py → Lê a planilha .xlsx com coluna "chassi"
+                   → Para cada chassi, chama a API da John Deere:
+                     GET https://jdwarrantysystem.deere.com/api/products/{PIN}/options
+                   → A API retorna um Excel com os equipamentos/opções do chassi
+                   → Consolida tudo em um único DataFrame
+
+  [3] db_inserter.py → Insere o DataFrame consolidado no MySQL
+                     → Tabela: db_Cor_Maqnelson_RPA_Dev.tb_EquipmentOptions
+                     → Usa ON DUPLICATE KEY UPDATE (sem duplicatas)
+
+  [4] main.py → Interface gráfica (CustomTkinter) que orquestra tudo acima
+
+Resumo: é um robô que simula um humano fazendo login, captura o token de
+acesso e usa esse token para buscar dados via API em lote.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PARTE 2 — É POSSÍVEL CRIAR UM PORTAL WEB? ANÁLISE DE VIABILIDADE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+RESPOSTA DIRETA: SIM, É TOTALMENTE POSSÍVEL. Com uma ressalva importante.
+
+O que é fácil de migrar para web:
+  ✔ Upload de planilha .xlsx pelo navegador                  → 100% viável
+  ✔ Chamadas à API da John Deere (GET por chassi)            → 100% viável (server-side)
+  ✔ Geração do Excel de resultado e download pelo browser    → 100% viável
+  ✔ Inserção no banco de dados MySQL                         → 100% viável
+  ✔ Visualização de logs/progresso em tempo real na tela     → 100% viável
+
+O que é desafiador (o ponto crítico — O LOGIN):
+  ⚠ O login Okta exige interação humana real (aprovar no app do celular/2FA)
+  ⚠ Isso é feito hoje em uma janela de Chrome que abre na máquina do usuário
+  ⚠ Em um servidor remoto, o usuário não pode interagir com um Chrome
+    rodando lá na nuvem — não tem tela!
+
+SOLUÇÃO PARA O LOGIN — 3 OPÇÕES (detalhadas abaixo):
+
+  OPÇÃO A — Recomendada: "Token Helper Local" (mais simples)
+    O usuário roda um mini-script Python na própria máquina dele, que abre
+    o Chrome, faz login normalmente e exibe o token. Ele copia e cola no portal.
+    
+  OPÇÃO B — Intermediária: Usuário copia o token manualmente do browser
+    O portal explica passo a passo como o usuário pode abrir o JD Warranty,
+    fazer login, abrir o DevTools (F12) e copiar o token das requisições.
+
+  OPÇÃO C — Avançada: Browser remoto com noVNC no servidor
+    O servidor roda o Chrome + Selenium num container Docker com VNC, e o
+    usuário vê e controla o browser diretamente pelo portal via noVNC.
+    (Mais complexo, mas 100% self-contained no servidor)
+
+RECOMENDAÇÃO PARA A MAQNELSON: usar a OPÇÃO A no início (mais rápida de
+implementar e já funciona com o que vocês têm), evoluindo para OPÇÃO C
+futuramente se quiserem eliminar qualquer script local.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PARTE 3 — ARQUITETURA PROPOSTA DO PORTAL
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │                         PORTAL WEB                                  │
+  │                                                                     │
+  │  [Navegador do usuário]                                             │
+  │       │  HTTPS                                                      │
+  │       ▼                                                             │
+  │  [FastAPI — Backend Python]  ←→  [Redis — Fila de tarefas]         │
+  │       │                               │                             │
+  │       │                               ▼                             │
+  │       │                     [Celery Worker — processa chassis]      │
+  │       │                               │                             │
+  │       │                     ┌─────────┴──────────┐                 │
+  │       │                     ▼                    ▼                  │
+  │       │             [API John Deere]      [MySQL Database]          │
+  │       │                     │                                       │
+  │       ▼                     ▼                                       │
+  │  [Download do Excel resultante]                                     │
+  └─────────────────────────────────────────────────────────────────────┘
+
+  Componentes:
+  ┌─────────────────────┬────────────────────────────────────────────┐
+  │ Componente          │ Responsabilidade                           │
+  ├─────────────────────┼────────────────────────────────────────────┤
+  │ FastAPI             │ API REST + servir o HTML do portal         │
+  │ HTML/CSS/JS         │ Interface do usuário no navegador          │
+  │ Celery              │ Executa o processamento em background      │
+  │ Redis               │ Fila de tarefas + canal de progresso       │
+  │ MySQL               │ Banco de dados (já existe)                 │
+  │ Docker              │ Empacota tudo para deploy fácil            │
+  └─────────────────────┴────────────────────────────────────────────┘
+
+  Stack tecnológica detalhada:
+  - Linguagem:     Python 3.11+
+  - Web framework: FastAPI (rápido, async, documentação automática)
+  - Frontend:      HTML + Bootstrap 5 + JavaScript puro (sem React)
+  - Background:    Celery + Redis (processamento sem travar a tela)
+  - Progresso:     Server-Sent Events (SSE) — barra de progresso em tempo real
+  - Arquivos:      Upload via multipart/form-data, download via streaming
+  - Banco:         MySQL (mesmo já existente — db_inserter.py reaproveitado)
+  - Deploy:        Docker + Docker Compose
+  - Web server:    Uvicorn (embutido no FastAPI)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PARTE 4 — ESTRUTURA DE PASTAS DO PROJETO PORTAL
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  jd-portal/
+  ├── backend/
+  │   ├── main.py             ← Aplicação FastAPI (rotas, endpoints)
+  │   ├── tasks.py            ← Tarefas Celery (processamento em background)
+  │   ├── processor.py        ← Reaproveitado do projeto atual (ajustes mínimos)
+  │   ├── db_inserter.py      ← Reaproveitado do projeto atual (sem alterações)
+  │   ├── requirements.txt    ← Dependências Python
+  │   └── .env                ← Credenciais do banco (NÃO vai para o git)
+  │
+  ├── frontend/
+  │   ├── index.html          ← Página principal do portal
+  │   ├── static/
+  │   │   ├── style.css       ← Estilos customizados
+  │   │   └── app.js          ← Lógica JavaScript do frontend
+  │   └── templates/          ← Templates Jinja2 (se usar renderização server-side)
+  │
+  ├── uploads/                ← Pasta temporária para planilhas recebidas
+  ├── resultados/             ← Pasta temporária para Excels gerados
+  ├── docker-compose.yml      ← Orquestra backend + Redis juntos
+  └── Dockerfile              ← Imagem Docker do backend
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PARTE 5 — TELAS DO PORTAL (O QUE O USUÁRIO VAI VER)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  TELA 1 — Página inicial / Login JD
+
+    ┌────────────────────────────────────────────────┐
+    │  🚜 JD Extractor — Maqnelson                   │
+    │                                                │
+    │  PASSO 1: Cole seu Token de Acesso John Deere  │
+    │  ┌──────────────────────────────────────────┐  │
+    │  │ Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6...  │  │
+    │  └──────────────────────────────────────────┘  │
+    │  [Como obter o token? ▼]                       │
+    │                                                │
+    │  [Validar Token e Continuar →]                 │
+    └────────────────────────────────────────────────┘
+
+  TELA 2 — Upload da planilha
+
+    ┌────────────────────────────────────────────────┐
+    │  PASSO 2: Envie a planilha com os chassis       │
+    │                                                │
+    │  ┌──────────────────────────────────────────┐  │
+    │  │        Arraste o .xlsx aqui              │  │
+    │  │          ou clique para selecionar       │  │
+    │  └──────────────────────────────────────────┘  │
+    │                                                │
+    │  [← Voltar]          [Iniciar Extração →]      │
+    └────────────────────────────────────────────────┘
+
+  TELA 3 — Progresso em tempo real
+
+    ┌────────────────────────────────────────────────┐
+    │  Processando chassis...                        │
+    │                                                │
+    │  ████████████████░░░░░░  18/25 chassis         │
+    │                                                │
+    │  ✔ 1CQS550AKN0145397 — 47 linhas              │
+    │  ✔ 1CQS550AKN0145398 — 32 linhas              │
+    │  ⏳ 1CQS550AKN0145399 — processando...         │
+    │                                                │
+    │  Log: [área de texto rolável com detalhes]     │
+    └────────────────────────────────────────────────┘
+
+  TELA 4 — Resultado final
+
+    ┌────────────────────────────────────────────────┐
+    │  ✅ Extração concluída!                        │
+    │                                                │
+    │  Chassis processados: 25                       │
+    │  Linhas extraídas:    1.247                    │
+    │  Inseridas no banco:  1.247                    │
+    │                                                │
+    │  [📥 Baixar Excel de Resultados]               │
+    │                                                │
+    │  [Fazer nova extração]                         │
+    └────────────────────────────────────────────────┘
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PARTE 6 — ENDPOINTS DA API BACKEND (FastAPI)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  POST   /api/validate-token
+    → Recebe o Bearer Token, faz uma requisição de teste na API JD
+    → Retorna: { "valid": true/false, "message": "..." }
+
+  POST   /api/upload
+    → Recebe o arquivo .xlsx (multipart/form-data)
+    → Valida se existe coluna "chassi"
+    → Retorna: { "job_id": "uuid-aqui", "total_chassis": 25 }
+
+  POST   /api/iniciar/{job_id}
+    → Dispara a tarefa Celery em background
+    → Retorna: { "status": "queued" }
+
+  GET    /api/progresso/{job_id}
+    → Server-Sent Events (SSE) — stream de progresso em tempo real
+    → Envia eventos: { "chassi": "...", "linhas": 47, "atual": 18, "total": 25 }
+
+  GET    /api/resultado/{job_id}
+    → Retorna o arquivo Excel para download
+    → Content-Type: application/vnd.openxmlformats...
+
+  GET    /api/status/{job_id}
+    → Retorna o estado atual da tarefa: queued / running / done / error
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PARTE 7 — SOLUÇÃO DETALHADA PARA O LOGIN OKTA (O PONTO CRÍTICO)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  OPÇÃO A — Token Helper Local (RECOMENDADA para início)
+  ───────────────────────────────────────────────────────
+
+  O usuário roda uma vez na própria máquina um script mínimo:
+
+    python token_helper.py
+
+  O script:
+    1. Abre o Chrome na máquina do usuário
+    2. O usuário faz login no JD Warranty System normalmente (com Okta)
+    3. O script intercepta o Bearer Token (já existe em scraper.py!)
+    4. Exibe o token no terminal em uma caixa clara:
+
+       ┌─────────────────────────────────────────────────────────────┐
+       │  TOKEN CAPTURADO — Copie e cole no portal:                  │
+       │                                                             │
+       │  Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiO... │
+       └─────────────────────────────────────────────────────────────┘
+
+    5. O usuário copia o token e cola na Tela 1 do portal
+
+  Vantagens:
+    + Reusa 100% o scraper.py já existente (quase sem código novo)
+    + O token dura várias horas — o usuário faz isso 1x por sessão
+    + Sem complexidade de VNC ou browser remoto
+
+  Desvantagens:
+    - Requer que o Python esteja instalado na máquina do usuário
+    - Pode-se distribuir como um .exe (já sabemos fazer com PyInstaller!)
+
+
+  OPÇÃO B — Cópia manual pelo DevTools (sem script)
+  ──────────────────────────────────────────────────
+
+  O portal exibe um guia em vídeo/GIF ou imagens mostrando:
+    1. Abra jdwarrantysystem.deere.com no Chrome
+    2. Faça login normalmente
+    3. Pressione F12 → aba "Network"
+    4. Clique em qualquer requisição para "api/products"
+    5. Em "Headers", copie o valor de "Authorization"
+    6. Cole no campo do portal
+
+  Vantagens:
+    + Zero instalação extra
+    + Funciona em qualquer máquina
+  Desvantagens:
+    - Requer mais instrução ao usuário
+
+
+  OPÇÃO C — Browser remoto com noVNC (AVANÇADA)
+  ──────────────────────────────────────────────
+
+  O servidor Docker tem:
+    - Selenium + Chrome em container com Xvfb (tela virtual)
+    - noVNC (converte VNC para WebSocket — acessível pelo browser)
+
+  Fluxo no portal:
+    1. Usuário clica "Fazer Login"
+    2. Abre um iframe/popup mostrando o browser remoto em tempo real
+    3. Usuário vê o Chrome rodando no servidor e faz o login normalmente
+    4. O token é capturado automaticamente no servidor
+    5. Iframe fecha, token fica salvo na sessão do portal
+
+  Vantagens:
+    + 100% web — nenhum script local
+    + Experiência idêntica ao desktop atual
+  Desvantagens:
+    - Maior complexidade de setup (Docker + VNC + noVNC)
+    - Consome mais recursos do servidor
+    - Pode ter latência de vídeo dependendo da conexão
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PARTE 8 — O QUE PODE SER REAPROVEITADO DO PROJETO ATUAL
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ┌─────────────────────┬──────────────┬───────────────────────────────────┐
+  │ Arquivo atual       │ Reaproveitado│ O que muda                        │
+  ├─────────────────────┼──────────────┼───────────────────────────────────┤
+  │ processor.py        │ SIM (90%)    │ Remove referências a caminho local │
+  │                     │              │ Recebe token como parâmetro        │
+  │                     │              │ Emite eventos de progresso via SSE  │
+  ├─────────────────────┼──────────────┼───────────────────────────────────┤
+  │ db_inserter.py      │ SIM (100%)   │ Nenhuma alteração necessária       │
+  ├─────────────────────┼──────────────┼───────────────────────────────────┤
+  │ scraper.py          │ SIM (100%)   │ Vira o "token_helper.py" local    │
+  ├─────────────────────┼──────────────┼───────────────────────────────────┤
+  │ main.py (GUI)       │ NÃO          │ Substituído pela interface web     │
+  ├─────────────────────┼──────────────┼───────────────────────────────────┤
+  │ .env                │ SIM (100%)   │ Fica no servidor, não no cliente   │
+  └─────────────────────┴──────────────┴───────────────────────────────────┘
+
+  Resumo: 3 dos 4 arquivos principais são reaproveitados com mudanças mínimas.
+  Apenas a interface (main.py com CustomTkinter) é substituída pelo portal web.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PARTE 9 — PASSO A PASSO COMPLETO DE IMPLEMENTAÇÃO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ─────────────────────────────────────────────────────────────────────────────
+  ETAPA 1 — Preparar o backend FastAPI (2-3 dias de desenvolvimento)
+  ─────────────────────────────────────────────────────────────────────────────
+
+  1.1 — Criar o projeto e instalar dependências:
+
+    pip install fastapi uvicorn celery redis python-multipart openpyxl
+    pip install pandas requests mysql-connector-python python-dotenv
+
+  1.2 — Criar backend/main.py com os endpoints listados na Parte 6.
+
+  1.3 — Adaptar processor.py:
+    - Receber token como parâmetro (não mais do scraper)
+    - Adicionar callback de progresso que publica no Redis
+    - Retornar bytes do Excel em vez de salvar em caminho fixo
+
+  1.4 — Criar tasks.py com Celery:
+    - Função process_job(job_id, token, arquivo_bytes)
+    - Publica progresso no Redis channel "progress:{job_id}"
+    - Salva o Excel resultante em /resultados/{job_id}.xlsx
+
+  1.5 — Criar o arquivo docker-compose.yml:
+
+    services:
+      api:
+        build: .
+        ports: ["8000:8000"]
+        env_file: .env
+        depends_on: [redis]
+
+      worker:
+        build: .
+        command: celery -A tasks worker --loglevel=info
+        env_file: .env
+        depends_on: [redis]
+
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+
+  ─────────────────────────────────────────────────────────────────────────────
+  ETAPA 2 — Criar o frontend HTML (1-2 dias de desenvolvimento)
+  ─────────────────────────────────────────────────────────────────────────────
+
+  2.1 — index.html com Bootstrap 5 (sem framework JS complexo)
+        Fluxo de telas: Token → Upload → Progresso → Download
+
+  2.2 — app.js:
+    - Validação do token via fetch() para /api/validate-token
+    - Upload do arquivo via FormData e fetch() para /api/upload
+    - Leitura do progresso via EventSource (SSE) de /api/progresso/{job_id}
+    - Atualização da barra de progresso e log em tempo real
+    - Trigger do download ao concluir
+
+  2.3 — style.css: identidade visual Maqnelson (verde + branco)
+
+  ─────────────────────────────────────────────────────────────────────────────
+  ETAPA 3 — Token Helper Local (1 dia)
+  ─────────────────────────────────────────────────────────────────────────────
+
+  3.1 — Criar token_helper.py (baseado no scraper.py atual):
+    - Abre Chrome, aguarda login
+    - Captura o token
+    - Exibe na tela de forma clara para o usuário copiar
+
+  3.2 — Compilar como .exe com PyInstaller:
+    pyinstaller --onefile token_helper.py
+
+  3.3 — Distribuir o token_helper.exe para os usuários que usam o portal.
+        Eles rodam antes de acessar o portal, copiam o token, colam lá.
+
+  ─────────────────────────────────────────────────────────────────────────────
+  ETAPA 4 — Deploy no servidor (1 dia)
+  ─────────────────────────────────────────────────────────────────────────────
+
+  4.1 — Escolher onde hospedar (ver Parte 10 — Opções de Hospedagem)
+
+  4.2 — Enviar os arquivos para o servidor (git pull ou scp)
+
+  4.3 — Criar o arquivo .env no servidor com as credenciais do banco:
+    DB_HOST=srvdbmysql01.maqnelson.com.br
+    DB_PORT=3306
+    DB_USER=rpa
+    DB_PASSWORD=...
+    DB_NAME=db_Cor_Maqnelson_RPA_Dev
+
+  4.4 — Iniciar os containers:
+    docker-compose up -d
+
+  4.5 — Acessar http://IP-DO-SERVIDOR:8000 no browser
+
+  4.6 — Opcional: Configurar NGINX como proxy reverso + HTTPS (SSL)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PARTE 10 — OPÇÕES DE HOSPEDAGEM
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  OPÇÃO 1 — Servidor interno da Maqnelson (RECOMENDADA)
+    ✔ Já tem acesso à VPN e ao banco MySQL interno
+    ✔ Sem custo extra de cloud
+    ✔ Mais simples para segurança (não expõe dados para fora)
+    → Precisa de um servidor Windows ou Linux com Docker instalado
+    → Acessível pela rede interna (ou via VPN para home office)
+
+  OPÇÃO 2 — VPS Cloud (AWS, Azure, Google Cloud, DigitalOcean)
+    ✔ Alta disponibilidade
+    ✔ Acesso de qualquer lugar sem VPN
+    ⚠ O banco MySQL precisa ser acessível da cloud (túnel, whitelist de IP, ou
+      migrar o banco para cloud também)
+    ⚠ Custo mensal (~R$50-200/mês dependendo do provedor)
+
+  OPÇÃO 3 — Máquina de um funcionário como servidor temporário
+    ✔ Zero custo
+    ✔ Funciona para testes e uso interno
+    ⚠ Fica offline quando o computador desliga
+    → Útil apenas para POC (prova de conceito)
+
+  OPÇÃO 4 — Docker Desktop local (para desenvolvimento/testes)
+    → Instalar Docker Desktop no Windows
+    → Rodar docker-compose up
+    → Acessar localhost:8000
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PARTE 11 — SEGURANÇA E BOAS PRÁTICAS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ✔ O token Bearer da JD NUNCA é armazenado no banco — fica apenas na sessão
+    do usuário (memória Redis com TTL curto, ex: 4 horas)
+
+  ✔ O arquivo .env com credenciais do banco NUNCA vai para o Git
+    → Adicionar .env no .gitignore
+
+  ✔ Uploads de arquivo devem validar:
+    → Extensão (somente .xlsx)
+    → Tamanho máximo (ex: 5MB)
+    → Leitura com engine="openpyxl" (não executa macros)
+
+  ✔ Os arquivos temporários (uploads + resultados) devem ter limpeza automática
+    → Deletar após X horas ou após download confirmado
+
+  ✔ Se exposto na internet: adicionar autenticação básica no portal
+    → HTTP Basic Auth, ou login simples com usuário/senha fixos no .env
+
+  ✔ HTTPS obrigatório se exposto fora da rede interna
+    → Usar Certbot (Let's Encrypt) com NGINX gratuitamente
+
+  ✔ O portal não deve logar o token completo nos arquivos de log do servidor
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PARTE 12 — ESTIMATIVA DE ESFORÇO DE DESENVOLVIMENTO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ┌────────────────────────────────────────────┬───────────────┐
+  │ Tarefa                                     │ Estimativa    │
+  ├────────────────────────────────────────────┼───────────────┤
+  │ Backend FastAPI (rotas + adaptação código) │ 2-3 dias      │
+  │ Frontend HTML/CSS/JS (3 telas + progresso) │ 1-2 dias      │
+  │ Celery + Redis (fila + progresso SSE)      │ 1 dia         │
+  │ Token Helper (.py → .exe)                  │ 0.5 dia       │
+  │ Docker Compose + deploy no servidor        │ 1 dia         │
+  │ Testes end-to-end + ajustes                │ 1 dia         │
+  ├────────────────────────────────────────────┼───────────────┤
+  │ TOTAL                                      │ 6-8 dias      │
+  └────────────────────────────────────────────┴───────────────┘
+
+  Observação: esses são dias de desenvolvimento focado. Com GitHub Copilot
+  auxiliando, as partes de código repetitivo (rotas CRUD, HTML boilerplate)
+  ficam significativamente mais rápidas.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PARTE 13 — COMPARATIVO: EXECUTÁVEL vs. PORTAL WEB
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ┌──────────────────────────────┬─────────────────────┬─────────────────────┐
+  │ Critério                     │ Executável atual    │ Portal Web          │
+  ├──────────────────────────────┼─────────────────────┼─────────────────────┤
+  │ Instalação na máquina        │ Necessária (.exe)   │ Apenas o browser    │
+  │ Acesso de qualquer lugar     │ Não                 │ Sim (com VPN/HTTPS) │
+  │ Múltiplos usuários ao mesmo  │ Não (1 por vez)     │ Sim                 │
+  │ tempo                        │                     │                     │
+  │ Atualizar o sistema          │ Redistribuir .exe   │ Deploy no servidor  │
+  │ Log centralizado             │ Arquivo local       │ Servidor central    │
+  │ Histórico de execuções       │ Não                 │ Sim (banco/arquivos)│
+  │ Login JD (Okta)              │ Automático (Chrome) │ Helper local ou     │
+  │                              │                     │ manual (DevTools)   │
+  │ Complexidade de manter       │ Simples             │ Médio               │
+  │ Custo de infraestrutura      │ Zero                │ Servidor (interno   │
+  │                              │                     │ = zero custo extra) │
+  └──────────────────────────────┴─────────────────────┴─────────────────────┘
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PARTE 14 — PRÓXIMOS PASSOS RECOMENDADOS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  FASE 1 — Validar a ideia (antes de construir tudo):
+    [ ] Instalar Docker Desktop na sua máquina
+    [ ] Criar um backend FastAPI mínimo com 1 endpoint de teste
+    [ ] Verificar se o Docker consegue acessar o banco MySQL da Maqnelson
+        (esse é o ponto mais arriscado — vale validar primeiro)
+    [ ] Testar uma chamada à API JD com token colado manualmente
+
+  FASE 2 — Construir o MVP (versão mínima funcional):
+    [ ] Implementar os endpoints da Parte 6
+    [ ] Criar o frontend com as 4 telas da Parte 5
+    [ ] Adaptar processor.py para rodar server-side
+    [ ] Criar o token_helper.py e compilar como .exe
+
+  FASE 3 — Deploy e uso real:
+    [ ] Definir o servidor de hospedagem (ver Parte 10)
+    [ ] Fazer o deploy com Docker Compose
+    [ ] Testar com um lote real de chassis
+    [ ] Treinar os usuários
+
+  FASE 4 — Evoluções futuras (opcional):
+    [ ] Histórico de execuções no banco (quem rodou, quando, quantos chassis)
+    [ ] Página de relatórios com gráficos (quantos chassis por semana, etc.)
+    [ ] Autenticação de usuários com login e senha
+    [ ] Notificação por e-mail quando o processamento terminar
+    [ ] Integração via noVNC para eliminar o token_helper.exe
+
+
+================================================================================
+   CONCLUSÃO
+================================================================================
+
+O JD Extractor é um RPA bem estruturado. A migração para portal web é
+totalmente viável — grande parte do código Python existente (processor.py,
+db_inserter.py) é reaproveitada sem alterações significativas.
+
+O único ponto de atenção é o login Okta, que exige interação humana real.
+A solução mais pragmática é o "token_helper.exe" que o usuário roda 1 vez
+por sessão na própria máquina, copia o token e cola no portal.
+
+Com 6-8 dias de desenvolvimento, é possível ter um portal web funcional,
+hospedado internamente na Maqnelson, acessível pelo browser de qualquer
+computador da rede, com progresso em tempo real e download do Excel.
+
+================================================================================

@@ -1,0 +1,103 @@
+================================================================================
+   PASSO A PASSO — COLOCAR O JD EXTRACTOR FUNCIONANDO COM O BANCO
+================================================================================
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PASSO 1 — Instalar a lib do MySQL (só precisa fazer UMA VEZ)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Abra o terminal (PowerShell) e cole o comando abaixo:
+
+    pip install mysql-connector-python
+
+  Aguarde terminar. Deve aparecer "Successfully installed mysql-connector-python".
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PASSO 2 — Criar o índice no banco (só precisa fazer UMA VEZ)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Abra o MySQL Workbench, conecte no banco DEV e execute esse SQL:
+
+    ALTER TABLE tb_EquipmentOptions
+    ADD UNIQUE INDEX uq_pin_code (pin, code);
+
+  Isso evita que o mesmo chassi+opção entre duplicado se você rodar o
+  sistema duas vezes com os mesmos chassis.
+
+  Se der erro dizendo que o índice já existe, pode ignorar e ir para o passo 3.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PASSO 3 — Testar se conecta no banco (teste rápido)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  No terminal, dentro da pasta jd-extractor, cole e rode:
+
+    python -c "import mysql.connector; from dotenv import load_dotenv; import os; load_dotenv('.env'); conn = mysql.connector.connect(host=os.getenv('DB_HOST'), port=int(os.getenv('DB_PORT','3306')), user=os.getenv('DB_USER'), password=os.getenv('DB_PASSWORD'), database=os.getenv('DB_NAME')); print('CONECTOU COM SUCESSO!'); conn.close()"
+
+  Se aparecer "CONECTOU COM SUCESSO!" → pode ir para o Passo 4.
+  Se aparecer erro → veja a seção "ERROS COMUNS" no final deste arquivo.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PASSO 4 — Rodar o sistema e testar com 1 chassi
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  1. No terminal, vá para a pasta app/ e rode o sistema:
+
+       cd app
+       python main.py
+
+  2. Na tela que abrir:
+       a) Clique "1. Fazer Login (Okta)" → faça o login no Chrome normalmente
+       b) Clique "2. Selecionar Planilha" → selecione um .xlsx com 1 chassi só
+       c) Clique "3. Iniciar Extração" → escolha onde salvar o Excel
+
+  3. Aguarde o processo terminar.
+
+  4. O popup final vai mostrar algo assim:
+       "Processo concluído!
+        Salvo em: C:\...\Relatorio.xlsx
+        Linhas inseridas no banco: 47"
+
+     Se mostrar o número de linhas → funcionou!
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PASSO 5 — Confirmar no banco se os dados entraram
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Abra o MySQL Workbench e rode:
+
+    SELECT * FROM db_Cor_Maqnelson_RPA_Dev.tb_EquipmentOptions LIMIT 100;
+
+  Os dados do chassi que você processou devem aparecer nas linhas.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ERROS COMUNS E COMO RESOLVER
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ERRO: "Can't connect to MySQL server"
+  → O servidor não está acessível. Verifique:
+      - Você está na VPN da Maqnelson? (se o banco for interno)
+      - O host no .env está correto: srvdbmysql01.maqnelson.com.br
+      - A porta 3306 não está bloqueada por firewall
+
+  ERRO: "Access denied for user 'rpa'"
+  → Usuário ou senha errada no .env, ou o usuário não tem permissão de INSERT.
+  → Verifique com o time de infra se o usuário 'rpa' tem permissão na tabela.
+
+  ERRO: "ModuleNotFoundError: No module named 'mysql'"
+  → O Passo 1 não foi feito ainda. Rode: pip install mysql-connector-python
+
+  ERRO: "Table 'tb_EquipmentOptions' doesn't exist"
+  → O banco ou tabela não existe com esse nome exato.
+  → Verifique no Workbench se a tabela existe em db_Cor_Maqnelson_RPA_Dev.
+
+  AVISO no popup: "Banco de dados: ..."  mas Excel foi salvo
+  → O Excel foi gerado normalmente. Só o banco falhou.
+  → Leia a mensagem de erro para saber o motivo e consulte esta lista acima.
+
+================================================================================

@@ -3,6 +3,7 @@ import requests
 import io
 import os
 import traceback
+from db_inserter import inserir_no_banco
 
 # Log file vai para o Desktop do usuário
 LOG_PATH = os.path.join(os.path.expanduser("~"), "Desktop", "jd_extractor_log.txt")
@@ -31,7 +32,7 @@ def processar_chassis(lista_path, token, caminho_saida):
 
         if 'chassi' not in df_lista.columns:
             _log(f"Erro: Coluna 'chassi' não encontrada. Colunas disponíveis: {list(df_lista.columns)}")
-            return None, f"Coluna 'chassi' não encontrada.\nColunas da planilha: {list(df_lista.columns)}"
+            return None, 0, f"Coluna 'chassi' não encontrada.\nColunas da planilha: {list(df_lista.columns)}"
 
         chassis_list = df_lista['chassi'].dropna().astype(str).tolist()
         _log(f"Total de chassis: {len(chassis_list)}")
@@ -74,12 +75,22 @@ def processar_chassis(lista_path, token, caminho_saida):
 
             df_consolidado.to_excel(caminho_saida, index=False)
             _log(f"Arquivo salvo em: {caminho_saida}")
-            return caminho_saida, None
+
+            # Insere os dados no banco MySQL
+            linhas_db = 0
+            erro_db = None
+            try:
+                linhas_db = inserir_no_banco(df_consolidado, log_fn=_log)
+            except Exception as e_db:
+                erro_db = f"Banco de dados: {e_db}"
+                _log(f"  Erro ao inserir no banco: {e_db}")
+
+            return caminho_saida, linhas_db, erro_db
 
         _log("Nenhum dado extraído.")
-        return None, "Nenhum dado foi extraído. Verifique o log em:\n" + LOG_PATH
+        return None, 0, "Nenhum dado foi extraído. Verifique o log em:\n" + LOG_PATH
 
     except Exception as e:
         tb = traceback.format_exc()
         _log(f"Erro Geral no Processador:\n{tb}")
-        return None, f"{e}\n\nLog completo em:\n{LOG_PATH}"
+        return None, 0, f"{e}\n\nLog completo em:\n{LOG_PATH}"
