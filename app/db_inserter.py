@@ -46,6 +46,8 @@ def _val(v):
     s = str(v).strip()
     if s.lower() in ('', 'nan', 'nat', 'none'):
         return None
+    # Remove o caractere de substituição UTF-8 (U+FFFD) que causa erro no MySQL
+    s = s.replace('\uFFFD', '')
     return s
 
 
@@ -83,6 +85,7 @@ def inserir_no_banco(df, log_fn=print):
         password=password,
         database=database,
         connect_timeout=10,
+        charset='utf8mb4',
     )
     cursor = conn.cursor()
     inseridos = 0
