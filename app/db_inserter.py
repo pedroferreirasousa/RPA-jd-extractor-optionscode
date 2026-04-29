@@ -5,11 +5,6 @@ import mysql.connector
 from dotenv import load_dotenv
 from datetime import datetime
 
-# ----------------------------------------------------------------
-# Resolve o caminho do .env:
-#   - Como .exe  → .env fica na mesma pasta do executável
-#   - Como .py   → .env fica na raiz do projeto (um nível acima de app/)
-# ----------------------------------------------------------------
 if getattr(sys, 'frozen', False):
     _base_dir = os.path.dirname(sys.executable)
 else:
@@ -17,12 +12,7 @@ else:
 
 load_dotenv(os.path.join(_base_dir, '.env'))
 
-# ----------------------------------------------------------------
-# SQL de inserção
-# ON DUPLICATE KEY UPDATE garante que se o mesmo (pin + code) já
-# existir (quando houver UNIQUE INDEX), apenas atualiza em vez de
-# duplicar. Sem o índice, se comporta como INSERT normal.
-# ----------------------------------------------------------------
+
 _INSERT_SQL = """
     INSERT INTO tb_EquipmentOptions
         (pin, code, description, created_at, created_by,
@@ -46,7 +36,6 @@ def _val(v):
     s = str(v).strip()
     if s.lower() in ('', 'nan', 'nat', 'none'):
         return None
-    # Remove o caractere de substituição UTF-8 (U+FFFD) que causa erro no MySQL
     s = s.replace('\uFFFD', '')
     return s
 
@@ -72,7 +61,6 @@ def inserir_no_banco(df, log_fn=print):
             "DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME"
         )
 
-    # Normaliza colunas do DataFrame para comparação segura
     df = df.copy()
     df.columns = [str(c).lower().strip() for c in df.columns]
 
